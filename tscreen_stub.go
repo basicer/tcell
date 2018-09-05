@@ -41,3 +41,11 @@ func (t *tScreen) getWinSize() (int, int, error) {
 func (t *tScreen) Beep() error {
 	return ErrNoScreen
 }
+
+func (d *defaultTermDriver) Engage() {
+	signal.Notify(d.winch, syscall.SIGWINCH)
+}
+
+func (d *defaultTermDriver) Disengage() {
+	signal.Stop(d.winch)
+}

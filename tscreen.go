@@ -42,15 +42,23 @@ import (
 // $COLUMNS environment variables can be set to the actual window size,
 // otherwise defaults taken from the terminal database are used.
 func NewTerminfoScreen() (Screen, error) {
-	ti, e := terminfo.LookupTerminfo(os.Getenv("TERM"))
+	driver := &defaultTermDriver{}
+	return NewTerminfoScreenWithDriver(driver)
+}
+
+func NewTerminfoScreenWithDriver(driver TermDriver) (Screen, error) {
+	t := &tScreen{driver: driver}
+
+	ti, e := terminfo.LookupTerminfo(driver.GetTerm())
 	if e != nil {
-		ti, e = loadDynamicTerminfo(os.Getenv("TERM"))
+		ti, e = loadDynamicTerminfo(driver.GetTerm())
 		if e != nil {
 			return nil, e
 		}
 		terminfo.AddTerminfo(ti)
 	}
-	t := &tScreen{ti: ti}
+
+	t.ti = ti
 
 	t.keyexist = make(map[Key]bool)
 	t.keycodes = make(map[string]*tKeyCode)
@@ -77,6 +85,7 @@ type tKeyCode struct {
 // tScreen represents a screen backed by a terminfo implementation.
 type tScreen struct {
 	ti           *terminfo.Terminfo
+	driver       TermDriver
 	h            int
 	w            int
 	fini         bool
@@ -1575,7 +1584,6 @@ func (t *tScreen) HasKey(k Key) bool {
 
 func (t *tScreen) Resize(int, int, int, int) {}
 
-
 func (t *tScreen) Suspend() error {
 	t.disengage()
 	return nil
@@ -1583,4 +1591,11 @@ func (t *tScreen) Suspend() error {
 
 func (t *tScreen) Resume() error {
 	return t.engage()
+}
+
+// SetDriver is used to replace the default TermDriver.
+// When using this package, you'll want to make an interface
+// and type assert your Screen to get this method.
+func (t *tScreen) SetDriver(driver TermDriver) {
+	t.driver = driver
 }

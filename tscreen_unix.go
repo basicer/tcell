@@ -18,11 +18,9 @@ package tcell
 
 import (
 	"errors"
-	"os"
+	"golang.org/x/term"
 	"os/signal"
 	"syscall"
-
-	"golang.org/x/term"
 )
 
 // engage is used to place the terminal in raw mode and establish screen size, etc.
@@ -37,7 +35,7 @@ func (t *tScreen) engage() error {
 	if _, err := term.MakeRaw(int(t.in.Fd())); err != nil {
 		return err
 	}
-	if w, h, err := term.GetSize(int(t.in.Fd())); err == nil && w != 0 && h != 0 {
+	if w, h, err := t.getWinSize(); err == nil && w != 0 && h != 0 {
 		t.cells.Resize(w, h)
 	}
 	stopQ := make(chan struct{})
@@ -45,7 +43,7 @@ func (t *tScreen) engage() error {
 	t.nonBlocking(false)
 	t.enableMouse(t.mouseFlags)
 	t.enablePasting(t.pasteEnabled)
-	signal.Notify(t.sigwinch, syscall.SIGWINCH)
+	t.driver.Engage()
 
 	ti := t.ti
 	t.TPuts(ti.EnterCA)
@@ -76,7 +74,7 @@ func (t *tScreen) disengage() {
 	// wait for everything to shut down
 	t.wg.Wait()
 
-	signal.Stop(t.sigwinch)
+	t.driver.Disengage()
 
 	// put back normal blocking mode
 	t.nonBlocking(false)
@@ -102,8 +100,7 @@ func (t *tScreen) disengage() {
 // so that it can be restored when the application terminates.
 func (t *tScreen) initialize() error {
 	var err error
-	t.out = os.Stdout
-	if t.in, err = os.Open("/dev/tty"); err != nil {
+	if t.in, t.out, err = t.driver.Init(t.sigwinch); err != nil {
 		return err
 	}
 
@@ -123,6 +120,9 @@ func (t *tScreen) finalize() {
 
 // getWinSize is called to obtain the terminal dimensions.
 func (t *tScreen) getWinSize() (int, int, error) {
+	if w, h, err := t.driver.WinSize(); err != ErrWinSizeUnused {
+		return w, h, err
+	}
 	return term.GetSize(int(t.in.Fd()))
 }
 
@@ -130,4 +130,12 @@ func (t *tScreen) getWinSize() (int, int, error) {
 func (t *tScreen) Beep() error {
 	t.writeString(string(byte(7)))
 	return nil
+}
+
+func (d *defaultTermDriver) Engage() {
+	signal.Notify(d.winch, syscall.SIGWINCH)
+}
+
+func (d *defaultTermDriver) Disengage() {
+	signal.Stop(d.winch)
 }
